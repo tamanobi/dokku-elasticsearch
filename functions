@@ -56,18 +56,21 @@ service_create_container() {
   local SERVICE_HOST_ROOT="$PLUGIN_DATA_HOST_ROOT/$SERVICE"
   local SERVICE_NAME="$(get_service_name "$SERVICE")"
 
-  ID=$(docker run --name "$SERVICE_NAME" -v "$SERVICE_HOST_ROOT/data:/usr/share/elasticsearch/data" -v "$SERVICE_HOST_ROOT/config:/usr/share/elasticsearch/config" --env-file="$SERVICE_ROOT/ENV" -d --restart always --label dokku=service --label dokku.service=elasticsearch "$PLUGIN_IMAGE:$PLUGIN_IMAGE_VERSION")
+  dokku_log_info2 "If elastic-search doesn't run or keeps restarting the container, run:"
+  dokku_log_info2 "   sudo sysctl -w vm.max_map_count=262144"
+  dokku_log_info2 "on the host..."
+  ID=$(docker run --name "$SERVICE_NAME" -v "$SERVICE_ROOT/data:/usr/share/elasticsearch/data" --env-file="$SERVICE_ROOT/ENV" -d --restart always --label dokku=service --label dokku.service=elasticsearch "$PLUGIN_IMAGE:$PLUGIN_IMAGE_VERSION")
   echo "$ID" > "$SERVICE_ROOT/ID"
 
-  dokku_log_info2 "Copying config files into place"
-  retry-docker-command "$ID" "cp -arfp --no-clobber /etc/elasticsearch/. /usr/share/elasticsearch/config/"
-  retry-docker-command "$ID" "echo 'network.host: 0.0.0.0' >> /usr/share/elasticsearch/config/elasticsearch.yml"
-  retry-docker-command "$ID" "rm -rf /etc/elasticsearch && ln -sfn /usr/share/elasticsearch/config /etc/elasticsearch"
-  retry-docker-command "$ID" "chown -R root:elasticsearch /etc/elasticsearch"
-  docker restart "$ID" > /dev/null
+  dokku_log_info2 "Creating required dirs"
+  retry-docker-command "$ID" "mkdir -p /usr/share/elasticsearch/config/scripts"
+  retry-docker-command "$ID" "mkdir -p /usr/share/elasticsearch/data/nodes"
+  retry-docker-command "$ID" "chmod 775 /usr/share/elasticsearch/data/nodes"
+  retry-docker-command "$ID" "chown -R elasticsearch:root /usr/share/elasticsearch/data"
+  retry-docker-command "$ID" "chown -R elasticsearch:root /usr/share/elasticsearch/config"
 
   dokku_log_verbose_quiet "Waiting for container to be ready"
-  docker run --rm --link "$SERVICE_NAME:$PLUGIN_COMMAND_PREFIX" dokkupaas/wait:0.2 -p "$PLUGIN_DATASTORE_WAIT_PORT" > /dev/null
+  docker run --rm --link "$SERVICE_NAME:$PLUGIN_COMMAND_PREFIX" dokkupaas/wait:0.2 -p "$PLUGIN_DATASTORE_WAIT_PORT"
 
   dokku_log_info2 "$PLUGIN_SERVICE container created: $SERVICE"
   service_info "$SERVICE"
